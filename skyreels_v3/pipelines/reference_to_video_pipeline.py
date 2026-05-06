@@ -73,7 +73,18 @@ def retrieve_latents(
 
 class WanSkyReelsA2WanT2VPipeline(DiffusionPipeline, WanLoraLoaderMixin):
     r"""
-    Pipeline for image-to-video generation using Wan model.
+    SkyReels-V3 **reference-to-video** diffusion pipeline (report §2.1).
+
+    Multimodal in-context layout:
+
+    * Text: UMT5 ``prompt_embeds`` cross-attend inside the DiT.
+    * References: each RGB reference is VAE-encoded to a single-frame latent; up to
+      ``MAX_ALLOWED_REF_IMG_LENGTH`` references are concatenated along **time**, padded
+      with zero latents, then concatenated with noisy video latents along **channel**
+      (see ``prepare_latents`` and ``torch.cat(..., dim=2)`` in ``__call__``).
+
+    Classifier-free guidance is **two-axis**: text (``guidance_scale``) and reference
+    appearance (``guidance_scale_img``), using an empty reference tensor ``uncondition``.
 
     Args:
         tokenizer ([`T5Tokenizer`]):
@@ -297,7 +308,26 @@ class WanSkyReelsA2WanT2VPipeline(DiffusionPipeline, WanLoraLoaderMixin):
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
         latents: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Prepare initial latents and reference image latents."""
+        """Prepare Gaussian video latents and reference latents for DiT conditioning.
+
+        Implements SkyReels-V3 §2.1 “multi-reference conditioning”: each reference RGB
+        image is encoded by the **video VAE** as a single-frame latent, normalized with
+        ``latents_mean`` / ``latents_std``. Up to ``MAX_ALLOWED_REF_IMG_LENGTH`` images
+        are concatenated along latent **time**; shorter lists are padded with zero slots.
+
+        In ``__call__``, ``condition`` is concatenated with ``latents`` along **channel**
+        (``dim=2``) so the transformer sees noisy targets and frozen reference appearance.
+
+        Pseudocode::
+
+            latents ~ N(0,I) of shape [B,C,T_vid,H,W]
+            refs = [ normalize(VAE(img_as_single_frame_video)) for img in ref_images ]
+            refs = concat(refs, dim=T); pad T to MAX_ALLOWED_REF_IMG_LENGTH
+            return latents, refs
+
+        Returns:
+            ``(latents, ref_vae_latents)``.
+        """
         num_latent_frames = (num_frames - 1) // self.vae_scale_factor_temporal + 1
         latent_height = height // self.vae_scale_factor_spatial
         latent_width = width // self.vae_scale_factor_spatial
@@ -533,6 +563,15 @@ class WanSkyReelsA2WanT2VPipeline(DiffusionPipeline, WanLoraLoaderMixin):
         )
         uncondition = torch.zeros_like(condition)
 
+        # 6. Denoising — dual CFG per SkyReels-V3 §2.1:
+        #   eps_cond: latents + reference latents + positive text.
+        #   eps_neg_txt: latents + references + negative_prompt text.
+        #   eps_neg_txt_img: latents + zero refs + negative_prompt text.
+        #   noise_pred = eps_neg_txt_img
+        #       + guidance_scale_img * (eps_neg_txt - eps_neg_txt_img)
+        #       + guidance_scale * (eps_cond - eps_neg_txt).
+        # Predictions are sliced to the generated temporal extent before scheduler.step.
+
         # 6. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
@@ -694,6 +733,16 @@ def resize_ref_images(ref_imgs, size):
 
 
 class ReferenceToVideoPipeline:
+    """High-level loader for SkyReels-V3 multi-reference image-to-video checkpoints.
+
+    Wraps ``WanSkyReelsA2WanT2VPipeline`` with ``SkyReelsA2WanI2v3DModel``, optional USP
+    sequence parallelism, FP8/low-VRAM options, and resize/pad helpers for reference
+    images. Default inference uses few steps (``num_inference_steps=8`` in
+    ``generate_video``) with identical text/image guidance scales when distilled.
+
+    See ``WanSkyReelsA2WanT2VPipeline`` for tensor layout and CFG semantics.
+    """
+
     def __init__(
         self,
         model_path: str,

@@ -1,3 +1,13 @@
+"""
+SkyReels-V3 inference CLI (multimodal in-context video generation).
+
+Maps ``--task_type`` to one pipeline: reference images→video, single-shot extension,
+shot-switching extension, or audio-driven talking avatar. Rank-0 download + broadcast
+keeps multi-GPU inputs consistent. Design aligns with the SkyReels-V3 technical report
+(arXiv:2601.17323): unified diffusion-Transformer conditioning across text, visuals,
+video prefix, and audio embeddings.
+"""
+
 import argparse
 import logging
 import os

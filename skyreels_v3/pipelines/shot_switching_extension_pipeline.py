@@ -15,8 +15,14 @@ from ..utils.util import get_video_info
 
 
 class ShotSwitchingExtensionPipeline:
-    """
-    A pipeline for shot switching video extension tasks.
+    """Cinematic **shot-switching** extension (report §2.2), up to 5 s per run.
+
+    Loads ``shot_transformer`` (not the single-shot ``transformer``). The number of
+    tail frames used as VAE context is **tied to** ``--duration`` via
+    ``SHOT_NUM_CONDITION_FRAMES_MAP`` in ``config`` (2–5 s). Shot-type keywords such as
+    ``[ZOOM_IN_CUT]`` are **not** parsed here; they are prompt conventions / LLM hints
+    for the user. The training-time shot detector described in the paper is out of scope
+    for this inference repo.
     """
 
     def __init__(
@@ -101,6 +107,19 @@ class ShotSwitchingExtensionPipeline:
         fps: int = 24,
         resolution: str = "720P",
     ):
+        """One-shot extension with duration-dependent conditioning depth.
+
+        Pseudocode::
+
+            assert duration in SHOT_NUM_CONDITION_FRAMES_MAP
+            N <- map[duration]
+            prefix <- last N frames  # ``get_video_info``
+            cond <- VAE.encode(prefix)
+            return denoise(cond, num_frames=duration*fps+1, prompt)
+
+        Unlike ``SingleShotExtensionPipeline``, there is **no** rolling loop — full
+        output must fit the shot-switching model's trained horizon.
+        """
         assert (
             duration in SHOT_NUM_CONDITION_FRAMES_MAP
         ), f"Duration {duration} not supported"

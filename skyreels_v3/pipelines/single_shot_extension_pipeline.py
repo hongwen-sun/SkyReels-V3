@@ -24,8 +24,15 @@ def split_m_n(m, n):
 
 
 class SingleShotExtensionPipeline:
-    """
-    A pipeline for single-shot video extension tasks.
+    """Single-shot **long** video extension (SkyReels-V3 report §2.2).
+
+    Continues an input clip by taking the last ``num_condition_frames`` RGB frames as a
+    VAE prefix, then autoregressively rolling 5-second **segments** (``split_m_n``) so
+    each new segment is conditioned on the tail of the previous output. This realises
+    the “history / minute-level” extension story in the paper at inference time.
+
+    Uses ``subfolder="transformer"`` weights; see ``ShotSwitchingExtensionPipeline`` for
+    the ``shot_transformer`` variant and different prefix lengths.
     """
 
     def __init__(
@@ -110,6 +117,21 @@ class SingleShotExtensionPipeline:
         fps: int = 24,
         resolution: str = "720P",
     ):
+        """Autoregressively extend ``raw_video`` to ``duration`` seconds.
+
+        Steps (pseudocode)::
+
+            prefix, H, W <- last 25 frames of input, bucket-resized
+            for seg in split_duration_into_5s_chunks(duration):
+                cond <- VAE.encode(prefix)
+                clip <- denoise(cond, seg_length in latents, prompt, ...)
+                keep <- clip without the first 25 frames  # de-duplicate condition
+                prefix <- last 25 frames of clip (pixel space, renorm)
+            return concat(all keep along time)
+
+        Latent frame counts are nudged so temporal sizes stay compatible with the VAE
+        (``rest_frames`` / padding logic below).
+        """
         num_condition_frames = 25
         factor_num_frames = 6
         prefix_video, raw_video, height, width = get_video_info(

@@ -23,6 +23,15 @@ from diffusers.utils import USE_PEFT_BACKEND, scale_lora_layers, unscale_lora_la
 
 
 class WanAttnProcessor2_0:
+    """Attention mix for SkyReels-V3 reference-to-video.
+
+    Text cross-attention uses the trailing token slice of ``encoder_hidden_states``.
+    When ``add_k_proj`` is present, an additional prefix slice holds **reference-image**
+    embeddings; those drive a parallel KV branch (``key_img`` / ``value_img``) summed into
+    the main attention output. This implements appearance conditioning distinct from the
+    UMT5 text stream (report §2.1).
+    """
+
     def __init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError(
@@ -538,7 +547,11 @@ class SkyReelsA2WanI2v3DModel(
     ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginalModelMixin
 ):
     r"""
-    A Transformer model for video-like data used in the Wan model.
+    SkyReels-V3 diffusion Transformer for **multi-reference image-to-video** (report §2.1).
+
+    Compared with vanilla Wan I2V, reference appearance tokens are routed through extra KV
+    projections in attention (see ``WanAttnProcessor2_0``) while timestep-conditioned
+    video tokens keep RoPE over space-time.
 
     Args:
         patch_size (`Tuple[int]`, defaults to `(1, 2, 2)`):
