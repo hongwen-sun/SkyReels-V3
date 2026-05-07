@@ -10,6 +10,8 @@
 ---
 Welcome to the **SkyReels V3** repository! This is the official release of our flagship video generation model, built upon a unified **multimodal in-context learning framework**. SkyReels V3 natively supports three core generative capabilities: **1) multi-subject video generation from reference images**, **2) video generation guided by audio**, and **3) video-to-video generation**.
 
+> Developer note (Chinese): [推理架构说明 — docs/ARCHITECTURE.zh.md](docs/ARCHITECTURE.zh.md) maps the technical report to this repo's inference code.
+
 ## 🔥🔥🔥 News!!
 * Jan 29, 2026: 🎉 We launched the API for the SkyReels-V3 models on the [apifree.ai](https://www.apifree.ai/explore).
 * Jan 29, 2026: 🎉 We release the inference code and model weights of [SkyReels-V3](https://github.com/SkyworkAI/SkyReels-V3).

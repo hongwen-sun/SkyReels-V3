@@ -7,6 +7,13 @@ from ..config import ASPECT_RATIO_CONFIG
 
 
 def get_prefix_and_raw_video(input_video_path: str, num_condition_frames: int):
+    """Split decoded frames into a conditioning prefix and the remainder.
+
+    The **last** ``num_condition_frames`` frames become ``prefix_video`` (fed to the
+    VAE as continuation context). Earlier frames are returned as ``raw_video`` for
+    bookkeeping resize logic inside ``process_video``. This matches the extension
+    paradigm in SkyReels-V3 (condition on recent motion / scene).
+    """
     container = av.open(input_video_path)
     stream = container.streams.video[0]
     frames = [frame.to_ndarray(format="rgb24") for frame in container.decode(stream)]
@@ -66,6 +73,17 @@ def process_video(prefix_video, raw_video, ASPECT_RATIO):
 
 
 def get_video_info(input_video_path: str, num_condition_frames: int, resolution: str):
+    """Load input video, extract tail prefix, and resize to a supported bucket.
+
+    Parameters
+    ----------
+    num_condition_frames:
+        How many trailing RGB frames to keep as the spatial-temporal prefix for the
+        DiT + VAE (differs between single-shot vs shot-switching pipelines).
+
+    Returns ``prefix_video`` tensor (normalized later by caller), ``raw_video`` uint8
+    or None, and bucket ``height``/``width`` from ``ASPECT_RATIO_CONFIG[resolution]``.
+    """
     prefix_video, raw_video = get_prefix_and_raw_video(
         input_video_path, num_condition_frames
     )

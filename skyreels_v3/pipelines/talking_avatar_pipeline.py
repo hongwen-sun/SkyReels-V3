@@ -85,6 +85,15 @@ def timestep_transform(
 
 
 class TalkingAvatarPipeline:
+    """Audio-driven **talking avatar** (SkyReels-V3 report §2.3).
+
+    ``WanModel`` (``transformer_a2v``) fuses T5 text, CLIP image features, Wav2Vec-style
+    audio embeddings (precomputed by ``avatar_preprocess``), and VAE latents with a
+    spatio-temporal mask. Long-form output uses sliding windows with overlap; multi-speaker
+    control via per-person masks is described in the paper but this inference path
+    currently supports ``HUMAN_NUMBER == 1`` only.
+    """
+
     @classmethod
     def init_dit_model(
         cls,
@@ -243,6 +252,23 @@ class TalkingAvatarPipeline:
         max_frames_num=5000,
         progress=True,
     ):
+        r"""Synthesize a talking-head video from portrait + pre-baked audio features.
+
+        ``input_data`` must point to a preprocessed **audio tensor** (see
+        ``preprocess_audio``) and a local **image** path. First-window pipeline (summary)::
+
+            bucket resize portrait; load wav2vec embeddings
+            T5: ``input_prompt``, negative prompt, ``connection_prompt``
+            CLIP(image first frame); build mask ``msk`` + padded VAE encode ``y``
+            CFG stack (when scales > 1): cond, drop-text, drop-audio, full-null
+            Euler integration in latent space → decode → color match
+
+        Subsequent clips (later in this method) slide ``audio_start_idx`` forward using
+        ``motion_frame`` / ``drop_frame`` overlap — implements key-frame style stitching
+        from the technical report for minute-length clips.
+
+        Multi-person dialogue requires masks per speaker; raises if ``HUMAN_NUMBER > 1``.
+        """
         input_prompt = input_data["prompt"]
         cond_file_path = input_data["cond_image"]
         cond_image = Image.open(cond_file_path).convert("RGB")

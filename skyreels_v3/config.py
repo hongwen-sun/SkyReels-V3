@@ -68,6 +68,10 @@ ASPECT_RATIO_CONFIG = {
     },
 }
 
+# Shot-switching extension only: maps output duration (seconds) → number of conditioning
+# frames taken from the tail of the input video (see ``get_prefix_and_raw_video``).
+# Training-side shot-type detection is not in this repo; users encode transitions via
+# prompt tags such as ``[ZOOM_IN_CUT]`` (SkyReels-V3 report §2.2).
 SHOT_NUM_CONDITION_FRAMES_MAP = {
     2: 9,
     3: 17,
